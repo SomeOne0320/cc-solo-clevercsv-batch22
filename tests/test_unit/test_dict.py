@@ -8,6 +8,7 @@ CleverCSV's behavior differs.
 
 """
 
+import csv
 import io
 import tempfile
 import unittest
@@ -226,6 +227,30 @@ class DictTestCase(unittest.TestCase):
         self.assertEqual(
             next(reader),
             {"1": "1", "2": "2", "3": "abc", "4": "4", "5": "5", "6": "6"},
+        )
+
+    def test_read_line_num_with_blanks(self) -> None:
+        # line_num points at where the returned record ends in the source,
+        # not at the blank row that was skipped (matches stdlib).
+        data = "h1,h2\n1,2\n\n3,4\n"
+        reader = clevercsv.DictReader(io.StringIO(data))
+        rows = [(dict(row), reader.line_num) for row in reader]
+        std = csv.DictReader(io.StringIO(data))
+        expected = [(dict(row), std.line_num) for row in std]
+        self.assertEqual(rows, expected)
+        self.assertEqual(
+            rows, [({"h1": "1", "h2": "2"}, 2), ({"h1": "3", "h2": "4"}, 4)]
+        )
+
+    def test_read_line_num_multiline_field(self) -> None:
+        data = 'h1,h2\n"a\nb",2\n\n3,4\n'
+        reader = clevercsv.DictReader(io.StringIO(data))
+        rows = [(dict(row), reader.line_num) for row in reader]
+        std = csv.DictReader(io.StringIO(data))
+        expected = [(dict(row), std.line_num) for row in std]
+        self.assertEqual(rows, expected)
+        self.assertEqual(
+            rows, [({"h1": "a\nb", "h2": "2"}, 3), ({"h1": "3", "h2": "4"}, 5)]
         )
 
     def test_read_semi_sep(self) -> None:

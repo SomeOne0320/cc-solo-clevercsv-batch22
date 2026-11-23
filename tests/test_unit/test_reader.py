@@ -9,6 +9,8 @@ Author: Gertjan van den Burg
 
 import csv
 import json
+import os
+import tempfile
 import unittest
 
 from io import StringIO
@@ -100,6 +102,68 @@ class ReaderTestCase(unittest.TestCase):
         self.assertEqual(r.line_num, 3)
         self.assertRaises(StopIteration, next, r)
         self.assertEqual(r.line_num, 3)
+
+    def test_read_linenum_multiline_and_blank(self) -> None:
+        # line_num counts physical lines taken from the input, like stdlib:
+        # lines inside quoted fields and blank lines are all counted.
+        data = 'a,b\n"x\ny",2\n\nc,d\n'
+        r = clevercsv.reader(StringIO(data))
+        expected_line_nums = []
+        std = csv.reader(StringIO(data))
+        for _ in std:
+            expected_line_nums.append(std.line_num)
+        observed = []
+        for _ in r:
+            observed.append(r.line_num)
+        self.assertEqual(observed, expected_line_nums)
+        self.assertEqual(observed, [1, 3, 4, 5])
+
+    def test_read_linenum_strict_error(self) -> None:
+        # A strict-mode error propagates and leaves line_num at the number of
+        # physical lines consumed by the failing read, matching stdlib.
+        data = 'a,b\nc,d\ne,"bad"x\n'
+        r = clevercsv.reader(StringIO(data), strict=True)
+        with self.assertRaises(clevercsv.Error):
+            list(r)
+        std = csv.reader(StringIO(data), strict=True)
+        with self.assertRaises(csv.Error):
+            list(std)
+        self.assertEqual(r.line_num, std.line_num)
+        self.assertEqual(r.line_num, 3)
+
+    def test_reader_is_one_shot_iterator(self) -> None:
+        rows = ["a,b,c\n", "1,2,3\n", "4,5,6\n"]
+        r = clevercsv.reader(rows)
+        # iter(reader) is the reader itself at its current position
+        self.assertIs(iter(r), r)
+        self.assertEqual(next(r), ["a", "b", "c"])
+        self.assertIs(iter(r), r)
+        # continuing does not replay the row already consumed as a preview
+        self.assertEqual(list(r), [["1", "2", "3"], ["4", "5", "6"]])
+        # an exhausted reader stays exhausted
+        self.assertEqual(list(r), [])
+        # a new reader starts from the beginning again
+        self.assertEqual(
+            list(clevercsv.reader(rows)),
+            [["a", "b", "c"], ["1", "2", "3"], ["4", "5", "6"]],
+        )
+
+    def test_reader_preview_from_file(self) -> None:
+        # The same preview-then-consume flow must behave identically for a
+        # real file and for a re-iterable list of lines.
+        data = "a,b,c\n1,2,3\n4,5,6\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "data.csv")
+            with open(path, "w", newline="", encoding="utf-8") as fid:
+                fid.write(data)
+            with open(path, "r", newline="", encoding="utf-8") as fid:
+                file_reader = clevercsv.reader(fid)
+                preview = next(file_reader)
+                file_rest = list(file_reader)
+        list_reader = clevercsv.reader(data.splitlines(keepends=True))
+        self.assertEqual(next(list_reader), preview)
+        self.assertEqual(list(list_reader), file_rest)
+        self.assertEqual(file_rest, [["1", "2", "3"], ["4", "5", "6"]])
 
     def test_with_gen(self) -> None:
         def gen(x: Iterable[str]) -> Iterator[str]:

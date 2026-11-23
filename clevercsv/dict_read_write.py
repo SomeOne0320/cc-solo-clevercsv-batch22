@@ -98,10 +98,12 @@ class DictReader(
         if self.line_num == 0:
             self.fieldnames
         row = next(self.reader)
-        self.line_num = self.reader.line_num
-
         while row == []:
             row = next(self.reader)
+        # Report the physical line at which the returned record ends in the
+        # source file, including any blank rows that were skipped and lines
+        # consumed by multiline quoted fields.
+        self.line_num = self.reader.line_num
 
         d: _DictReadMapping = OrderedDict(zip(self.fieldnames, row))
         lf = len(self.fieldnames)

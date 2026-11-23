@@ -299,3 +299,69 @@ class WrappersTestCase(unittest.TestCase):
 
         with self.subTest(name="encoding_2"):
             self._write_test_dicts(items, exp, encoding="cp1252")
+
+    def _write_tmpfile_text(self, contents: str) -> str:
+        tmpfd, tmpfname = tempfile.mkstemp(prefix="ccsv_", suffix=".csv")
+        with os.fdopen(tmpfd, "w", encoding="utf-8", newline="") as fp:
+            fp.write(contents)
+        return tmpfname
+
+    def test_stream_dicts_columns(self) -> None:
+        dialect = SimpleDialect(delimiter=",", quotechar='"', escapechar="")
+        contents = "branch,amount,amount\nA,100,10\nB,,20\n"
+        tmpfname = self._write_tmpfile_text(contents)
+        columns = {
+            "branch": "branch",
+            "gross": ("amount", 1),
+            "refund": ("amount", 2),
+        }
+        try:
+            out = wrappers.stream_dicts(
+                tmpfname,
+                dialect=dialect,
+                encoding="utf-8",
+                columns=columns,
+            )
+            self.assertTrue(isinstance(out, types.GeneratorType))
+            rows = list(out)
+        finally:
+            os.unlink(tmpfname)
+        self.assertEqual(
+            rows,
+            [
+                {"branch": "A", "gross": "100", "refund": "10"},
+                {"branch": "B", "gross": "", "refund": "20"},
+            ],
+        )
+
+    def test_read_dicts_columns(self) -> None:
+        dialect = SimpleDialect(delimiter=",", quotechar='"', escapechar="")
+        # A quoted field containing a newline must survive the one-shot reader.
+        contents = 'branch,amount,amount\n"A\nZ",100,10\n'
+        tmpfname = self._write_tmpfile_text(contents)
+        columns = {"branch": "branch", "gross": ("amount", 1)}
+        try:
+            rows = wrappers.read_dicts(
+                tmpfname,
+                dialect=dialect,
+                encoding="utf-8",
+                columns=columns,
+            )
+        finally:
+            os.unlink(tmpfname)
+        self.assertEqual(rows, [{"branch": "A\nZ", "gross": "100"}])
+
+    def test_read_dicts_columns_bad_mapping_raises(self) -> None:
+        dialect = SimpleDialect(delimiter=",", quotechar='"', escapechar="")
+        contents = "a,b\n1,2\n"
+        tmpfname = self._write_tmpfile_text(contents)
+        try:
+            with self.assertRaises(ValueError):
+                wrappers.read_dicts(
+                    tmpfname,
+                    dialect=dialect,
+                    encoding="utf-8",
+                    columns={"x": "missing"},
+                )
+        finally:
+            os.unlink(tmpfname)

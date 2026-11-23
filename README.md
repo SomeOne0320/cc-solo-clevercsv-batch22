@@ -205,7 +205,9 @@ easier. We currently have the following helper functions:
   detect the dialect and return the rows of the file as dictionaries, assuming 
   the first row contains the headers. A streaming version called 
   [stream_dicts](https://clevercsv.readthedocs.io/en/latest/source/clevercsv.html#clevercsv.wrappers.stream_dicts) 
-  is also available.
+  is also available. Both take an optional `columns` mapping to select and 
+  rename columns, including disambiguating duplicate header names by 
+  one-based occurrence.
 * [write_table](https://clevercsv.readthedocs.io/en/latest/source/clevercsv.html#clevercsv.wrappers.write_table): 
   write a table (a list of lists) to a file using the 
   [RFC-4180](https://tools.ietf.org/html/rfc4180) dialect.

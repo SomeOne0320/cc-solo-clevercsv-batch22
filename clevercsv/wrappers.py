@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
     from ._types import FileDescriptorOrPath
     from ._types import _DialectLike
+    from ._types import _DictReadColumnSelector
     from ._types import _DictReadMapping
 
 _T = TypeVar("_T")
@@ -46,6 +47,7 @@ def stream_dicts(
     encoding: Optional[str] = None,
     num_chars: Optional[int] = None,
     verbose: bool = False,
+    columns: Optional["_DictReadColumnSelector[Any]"] = None,
 ) -> Iterator["_DictReadMapping"]:
     """Read a CSV file as a generator over dictionaries
 
@@ -77,6 +79,19 @@ def stream_dicts(
     verbose: bool
         Whether or not to show detection progress.
 
+    columns : mapping, optional
+        Ordered mapping that selects and renames columns. Each key is the key
+        delivered in the output dictionaries and each value is either a header
+        name or a ``(header name, occurrence)`` tuple, where the occurrence is
+        counted from one and is used to disambiguate duplicate header names. A
+        bare header name is only allowed when it occurs exactly once in the
+        header. Raises a ValueError when the header is read if a column can't
+        be found or a bare name is ambiguous, in which case no data rows are
+        yielded. Selected columns are returned in mapping order; missing
+        values in short rows use the DictReader default for ``restval`` and
+        extra values are collected under the DictReader default for
+        ``restkey``.
+
     Returns
     -------
     rows: generator
@@ -86,6 +101,10 @@ def stream_dicts(
     ------
     NoDetectionResult
         When the dialect detection fails.
+
+    ValueError
+        When the columns mapping references a header that doesn't exist or is
+        ambiguous.
 
     """
     if encoding is None:
@@ -99,7 +118,7 @@ def stream_dicts(
         if dialect is None:
             raise NoDetectionResult
 
-        reader: DictReader = DictReader(fid, dialect=dialect)
+        reader: DictReader = DictReader(fid, dialect=dialect, columns=columns)
         for row in reader:
             yield row
 
@@ -110,6 +129,7 @@ def read_dicts(
     encoding: Optional[str] = None,
     num_chars: Optional[int] = None,
     verbose: bool = False,
+    columns: Optional["_DictReadColumnSelector[Any]"] = None,
 ) -> List["_DictReadMapping"]:
     """Read a CSV file as a list of dictionaries
 
@@ -141,6 +161,12 @@ def read_dicts(
     verbose: bool
         Whether or not to show detection progress.
 
+    columns : mapping, optional
+        Ordered mapping that selects and renames columns. See
+        :func:`stream_dicts` for the full description. Raises a ValueError
+        when the header is read if a column can't be found or a bare name is
+        ambiguous, in which case no data rows are returned.
+
     Returns
     -------
     rows: list
@@ -151,6 +177,10 @@ def read_dicts(
     NoDetectionResult
         When the dialect detection fails.
 
+    ValueError
+        When the columns mapping references a header that doesn't exist or is
+        ambiguous.
+
     """
     return list(
         stream_dicts(
@@ -159,6 +189,7 @@ def read_dicts(
             encoding=encoding,
             num_chars=num_chars,
             verbose=verbose,
+            columns=columns,
         )
     )
 

@@ -11,6 +11,7 @@ CleverCSV's behavior differs.
 import io
 import tempfile
 import unittest
+import warnings
 
 from typing import Any
 from typing import Dict
@@ -267,6 +268,179 @@ class DictTestCase(unittest.TestCase):
 
     # End tests added for CleverCSV #
     #################################
+
+    ############################
+    # Tests for columns mapping
+
+    def test_columns_duplicate_headers_with_occurrence(self) -> None:
+        # The motivating use case: two headers named "金额" must both be
+        # reachable instead of one overwriting the other.
+        data = "branch,amount,amount,note\r\nA,100,10,ok\r\nB,,20,x\r\n"
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO(data),
+            columns={
+                "branch": "branch",
+                "gross": ("amount", 1),
+                "refund": ("amount", 2),
+            },
+        )
+        self.assertEqual(
+            reader.fieldnames, ["branch", "gross", "refund"]
+        )
+        self.assertEqual(
+            next(reader),
+            {"branch": "A", "gross": "100", "refund": "10"},
+        )
+        self.assertEqual(
+            next(reader),
+            {"branch": "B", "gross": "", "refund": "20"},
+        )
+
+    def test_columns_unique_name_and_output_order(self) -> None:
+        # A bare name works when unique, and the output order follows the
+        # mapping rather than the header order.
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,b,c\r\n1,2,3\r\n"),
+            columns={"z": "c", "x": "a"},
+        )
+        self.assertEqual(list(reader), [{"z": "3", "x": "1"}])
+
+    def test_columns_ambiguous_bare_name_raises(self) -> None:
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,a\r\n1,2\r\n"), columns={"x": "a"}
+        )
+        with self.assertRaises(ValueError):
+            next(reader)
+
+    def test_columns_missing_column_raises_at_header(self) -> None:
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,b\r\n1,2\r\n3,4\r\n"),
+            columns={"x": "missing"},
+        )
+        # The error is raised while reading the header; accessing fieldnames
+        # directly must raise too.
+        with self.assertRaises(ValueError):
+            reader.fieldnames
+        # And no data row may have been delivered.
+        with self.assertRaises(ValueError):
+            next(reader)
+
+    def test_columns_error_delivers_no_rows(self) -> None:
+        # Even when the first mapping entry is valid, a bad later entry must
+        # abort before any data row is yielded.
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,b\r\n1,2\r\n"),
+            columns={"ok": "a", "bad": "nope"},
+        )
+        self.assertRaises(ValueError, list, reader)
+
+    def test_columns_occurrence_out_of_range(self) -> None:
+        cases = [("a", 0), ("a", 3)]
+        for selector in cases:
+            with self.subTest(selector=selector):
+                reader: DictReader[str] = clevercsv.DictReader(
+                    io.StringIO("a,a\r\n1,2\r\n"),
+                    columns={"x": selector},
+                )
+                with self.assertRaises(ValueError):
+                    next(reader)
+
+    def test_columns_non_mapping_raises_type_error(self) -> None:
+        with self.assertRaises(TypeError):
+            clevercsv.DictReader(
+                io.StringIO("a\r\n1\r\n"),
+                columns=["a"],  # type: ignore[arg-type]
+            )
+
+    def test_columns_short_rows_use_restval_without_shifting(self) -> None:
+        # Missing trailing values in an old-style short row must be filled with
+        # restval; later columns must never receive values shifted forward.
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,b,c\r\n1,2\r\n"),
+            restval="MISSING",
+            columns={"A": "a", "B": "b", "C": "c"},
+        )
+        self.assertEqual(
+            list(reader),
+            [{"A": "1", "B": "2", "C": "MISSING"}],
+        )
+
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,b,c\r\n1\r\n"),
+            columns={"A": "a", "C": "c"},
+        )
+        self.assertEqual(
+            list(reader),
+            [{"A": "1", "C": None}],
+        )
+
+    def test_columns_long_rows_use_restkey(self) -> None:
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,b\r\n1,2,3,4\r\n"),
+            restkey="_rest",
+            columns={"A": "a"},
+        )
+        self.assertEqual(
+            next(reader),
+            {"A": "1", "_rest": ["3", "4"]},
+        )
+
+    def test_columns_quoted_newline_not_split(self) -> None:
+        source = iter(['a,b\r\n', '"line1\r\nline2",x\r\n', 'y,z\r\n'])
+        reader: DictReader[str] = clevercsv.DictReader(
+            source, columns={"A": "a"}
+        )
+        self.assertEqual(next(reader), {"A": "line1\r\nline2"})
+        self.assertEqual(next(reader), {"A": "y"})
+
+    def test_columns_with_explicit_fieldnames(self) -> None:
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("1,2\r\n"),
+            fieldnames=["f1", "f2"],
+            columns={"out": "f2"},
+        )
+        self.assertEqual(reader.fieldnames, ["out"])
+        self.assertEqual(list(reader), [{"out": "2"}])
+
+    def test_columns_fieldnames_setter_overrides_mapping(self) -> None:
+        # Explicitly assigning fieldnames is the stdlib escape hatch and must
+        # take precedence over a columns mapping. As in stdlib, the first row
+        # is then consumed as a data row.
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,b\r\n1,2\r\n"), columns={"x": "a"}
+        )
+        reader.fieldnames = ["p", "q"]
+        self.assertEqual(next(reader), {"p": "a", "q": "b"})
+        self.assertEqual(next(reader), {"p": "1", "q": "2"})
+
+    def test_columns_suppresses_duplicate_fieldnames_warning(self) -> None:
+        # With columns, duplicate headers are explicitly handled, so the
+        # "columns will be dropped" warning doesn't apply.
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,a\r\n1,2\r\n"),
+            columns={"x": ("a", 1), "y": ("a", 2)},
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            reader.fieldnames
+        self.assertEqual(
+            next(reader), {"x": "1", "y": "2"}
+        )
+
+    def test_columns_empty_file_fieldnames_none(self) -> None:
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO(""), columns={"x": "a"}
+        )
+        self.assertIsNone(reader.fieldnames)
+        with self.assertRaises(StopIteration):
+            next(reader)
+
+    def test_columns_default_behavior_unchanged(self) -> None:
+        reader: DictReader[str] = clevercsv.DictReader(
+            io.StringIO("a,b\r\n1,2\r\n")
+        )
+        self.assertEqual(reader.fieldnames, ["a", "b"])
+        self.assertEqual(next(reader), {"a": "1", "b": "2"})
 
 
 if __name__ == "__main__":

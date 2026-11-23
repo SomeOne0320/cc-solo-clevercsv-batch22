@@ -9,6 +9,7 @@ import sys
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Mapping
+from typing import Tuple
 from typing import TypeVar
 from typing import Union
 
@@ -20,6 +21,8 @@ AnyPath = Union[str, bytes, "os.PathLike[str]", "os.PathLike[bytes]"]
 StrPath = Union[str, "os.PathLike[str]"]
 _OpenFile = Union[AnyPath, int]
 _DictRow = Mapping[str, Any]
+_T = TypeVar("_T")
+_DictReadColumnSelector = Mapping[_T, Union[_T, Tuple[_T, int]]]
 _DialectLike = Union[
     str,
     csv.Dialect,
@@ -27,7 +30,6 @@ _DialectLike = Union[
     type[_csv.Dialect],
     SimpleDialect,
 ]
-_T = TypeVar("_T")
 
 if sys.version_info >= (3, 8):
     from typing import Dict as _DictReadMapping
@@ -47,6 +49,7 @@ if TYPE_CHECKING:
         "AnyPath",
         "_OpenFile",
         "_DictRow",
+        "_DictReadColumnSelector",
         "_DialectLike",
         "_DictReadMapping",
     ]
@@ -55,6 +58,7 @@ else:
         "AnyPath",
         "_OpenFile",
         "_DictRow",
+        "_DictReadColumnSelector",
         "_DialectLike",
         "_DictReadMapping",
     ]

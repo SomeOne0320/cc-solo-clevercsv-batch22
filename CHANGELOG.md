@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+* Add optional ``columns`` argument to ``DictReader``, ``read_dicts``, and
+  ``stream_dicts`` to select and rename columns by header name (with a
+  one-based occurrence for duplicate headers), resolving ambiguous or missing
+  columns while reading the header rather than dropping data later.
+
 ## Version 0.8.5
 
 * Fix reference counting bug in C extension 

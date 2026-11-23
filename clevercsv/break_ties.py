@@ -16,7 +16,9 @@ from .utils import pairwise
 
 
 def tie_breaker(
-    data: str, dialects: List[SimpleDialect]
+    data: str,
+    dialects: List[SimpleDialect],
+    field_limit: Optional[int] = None,
 ) -> Optional[SimpleDialect]:
     """
     Break ties between dialects.
@@ -31,6 +33,11 @@ def tie_breaker(
     dialects: list
         Dialects that are tied
 
+    field_limit: Optional[int]
+        The field size limit to use when re-parsing the data to compare
+        candidates. If None, the global limit set by
+        :func:`clevercsv.field_size_limit` is used.
+
     Returns
     -------
     dialect: SimpleDialect
@@ -39,16 +46,26 @@ def tie_breaker(
 
     """
     if len(dialects) == 2:
-        return break_ties_two(data, dialects[0], dialects[1])
+        return break_ties_two(
+            data, dialects[0], dialects[1], field_limit=field_limit
+        )
     elif len(dialects) == 3:
-        return break_ties_three(data, dialects[0], dialects[1], dialects[2])
+        return break_ties_three(
+            data,
+            dialects[0],
+            dialects[1],
+            dialects[2],
+            field_limit=field_limit,
+        )
     elif len(dialects) == 4:
-        return break_ties_four(data, dialects)
+        return break_ties_four(data, dialects, field_limit=field_limit)
     return None
 
 
 def reduce_pairwise(
-    data: str, dialects: List[SimpleDialect]
+    data: str,
+    dialects: List[SimpleDialect],
+    field_limit: Optional[int] = None,
 ) -> Optional[List[SimpleDialect]]:
     """Reduce the set of dialects by breaking pairwise ties
 
@@ -60,6 +77,11 @@ def reduce_pairwise(
 
     dialects: list
         List of SimpleDialect objects
+
+    field_limit: Optional[int]
+        The field size limit to use when re-parsing the data to compare
+        candidates. If None, the global limit set by
+        :func:`clevercsv.field_size_limit` is used.
 
     Returns
     -------
@@ -74,8 +96,8 @@ def reduce_pairwise(
     # First, identify dialects that result in the same parsing result.
     equal_dialects = []
     for a, b in pairwise(dialects):
-        X = list(parse_string(data, a))
-        Y = list(parse_string(data, b))
+        X = list(parse_string(data, a, field_limit=field_limit))
+        Y = list(parse_string(data, b, field_limit=field_limit))
         if X == Y:
             equal_dialects.append((a, b))
 
@@ -83,7 +105,7 @@ def reduce_pairwise(
     new_dialects = set()
     visited = set()
     for A, B in equal_dialects:
-        ans = break_ties_two(data, A, B)
+        ans = break_ties_two(data, A, B, field_limit=field_limit)
         if ans is not None:
             new_dialects.add(ans)
         visited.add(A)
@@ -107,7 +129,10 @@ def _dialects_only_differ_in_field(
 
 
 def break_ties_two(
-    data: str, A: SimpleDialect, B: SimpleDialect
+    data: str,
+    A: SimpleDialect,
+    B: SimpleDialect,
+    field_limit: Optional[int] = None,
 ) -> Optional[SimpleDialect]:
     """Break ties between two dialects.
 
@@ -139,6 +164,11 @@ def break_ties_two(
     B: SimpleDialect
         A potential dialect
 
+    field_limit: Optional[int]
+        The field size limit to use when re-parsing the data to compare
+        candidates. If None, the global limit set by
+        :func:`clevercsv.field_size_limit` is used.
+
     Returns
     -------
 
@@ -151,8 +181,10 @@ def break_ties_two(
             d_no = A if A.quotechar == "" else B
             d_yes = B if d_no == A else A
 
-            X = list(parse_string(data, dialect=d_no))
-            Y = list(parse_string(data, dialect=d_yes))
+            X = list(parse_string(data, dialect=d_no, field_limit=field_limit))
+            Y = list(
+                parse_string(data, dialect=d_yes, field_limit=field_limit)
+            )
 
             if X == Y:
                 # quotechar has no effect
@@ -176,8 +208,8 @@ def break_ties_two(
     elif _dialects_only_differ_in_field(A, B, "escapechar"):
         Dnone, Descape = (A, B) if A.escapechar == "" else (B, A)
 
-        X = list(parse_string(data, Dnone))
-        Y = list(parse_string(data, Descape))
+        X = list(parse_string(data, Dnone, field_limit=field_limit))
+        Y = list(parse_string(data, Descape, field_limit=field_limit))
 
         # double check shape. Usually if the shape differs the pattern score
         # should have caught it, but if by a freakish occurance it hasn't then
@@ -225,8 +257,10 @@ def break_ties_two(
             d_no = A if (Aq, Ae) == ("", "") else B
             d_yes = B if d_no == A else A
 
-            X = list(parse_string(data, dialect=d_no))
-            Y = list(parse_string(data, dialect=d_yes))
+            X = list(parse_string(data, dialect=d_no, field_limit=field_limit))
+            Y = list(
+                parse_string(data, dialect=d_yes, field_limit=field_limit)
+            )
 
             if len(X) != len(Y):
                 return None
@@ -255,7 +289,11 @@ def break_ties_two(
 
 
 def break_ties_three(
-    data: str, A: SimpleDialect, B: SimpleDialect, C: SimpleDialect
+    data: str,
+    A: SimpleDialect,
+    B: SimpleDialect,
+    C: SimpleDialect,
+    field_limit: Optional[int] = None,
 ) -> Optional[SimpleDialect]:
     """Break ties between three dialects.
 
@@ -283,6 +321,11 @@ def break_ties_three(
     C: SimpleDialect
         a dialect
 
+    field_limit: Optional[int]
+        The field size limit to use when re-parsing the data to compare
+        candidates. If None, the global limit set by
+        :func:`clevercsv.field_size_limit` is used.
+
     Returns
     -------
 
@@ -303,9 +346,9 @@ def break_ties_three(
         # difference is *only* in quotechar
         dialects = [A, B, C]
 
-        pA = list(parse_string(data, A))
-        pB = list(parse_string(data, B))
-        pC = list(parse_string(data, C))
+        pA = list(parse_string(data, A, field_limit=field_limit))
+        pB = list(parse_string(data, B, field_limit=field_limit))
+        pC = list(parse_string(data, C, field_limit=field_limit))
 
         if len(pA) != len(pB) or len(pA) != len(pC) or len(pB) != len(pC):
             return None
@@ -331,16 +374,22 @@ def break_ties_three(
             # 6da5ab459bcc7c3a5ed2e06d65810958.csv from the GitHub corpus of
             # the CSV paper. When fixing the delimiter to Tab, rem = [].
             # Try to reduce pairwise
-            new_dialects = reduce_pairwise(data, dialects)
+            new_dialects = reduce_pairwise(
+                data, dialects, field_limit=field_limit
+            )
             if new_dialects is None:
                 return None
             if len(new_dialects) == 1:
                 return new_dialects[0]
             return None
         if p_none == rem[0][0]:
-            return break_ties_two(data, d_none, rem[0][1])
+            return break_ties_two(
+                data, d_none, rem[0][1], field_limit=field_limit
+            )
         elif len(rem) > 1 and p_none == rem[1][0]:
-            return break_ties_two(data, d_none, rem[1][1])
+            return break_ties_two(
+                data, d_none, rem[1][1], field_limit=field_limit
+            )
     elif equal_delim:
         # difference is in quotechar *and* escapechar
 
@@ -358,13 +407,17 @@ def break_ties_three(
         if len(with_quote) != 2:
             return None
 
-        return break_ties_two(data, with_quote[0], with_quote[1])
+        return break_ties_two(
+            data, with_quote[0], with_quote[1], field_limit=field_limit
+        )
 
     return None
 
 
 def break_ties_four(
-    data: str, dialects: List[SimpleDialect]
+    data: str,
+    dialects: List[SimpleDialect],
+    field_limit: Optional[int] = None,
 ) -> Optional[SimpleDialect]:
     """Break ties between four dialects.
 
@@ -384,6 +437,11 @@ def break_ties_four(
     dialects: list
         List of SimpleDialect objects
 
+    field_limit: Optional[int]
+        The field size limit to use when re-parsing the data to compare
+        candidates. If None, the global limit set by
+        :func:`clevercsv.field_size_limit` is used.
+
     Returns
     -------
     dialect: Optional[SimpleDialect]
@@ -402,7 +460,7 @@ def break_ties_four(
     if not equal_delim:
         return None
 
-    reduced_dialects = reduce_pairwise(data, dialects)
+    reduced_dialects = reduce_pairwise(data, dialects, field_limit=field_limit)
     if reduced_dialects is None:
         return None
 
@@ -410,8 +468,19 @@ def break_ties_four(
     if len(reduced_dialects) == 1:
         return reduced_dialects[0]
     elif len(reduced_dialects) == 2:
-        return break_ties_two(data, *reduced_dialects)
+        return break_ties_two(
+            data,
+            reduced_dialects[0],
+            reduced_dialects[1],
+            field_limit=field_limit,
+        )
     elif len(reduced_dialects) == 3:
-        return break_ties_three(data, *reduced_dialects)
+        return break_ties_three(
+            data,
+            reduced_dialects[0],
+            reduced_dialects[1],
+            reduced_dialects[2],
+            field_limit=field_limit,
+        )
 
     return None

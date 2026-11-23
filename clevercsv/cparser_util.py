@@ -53,13 +53,16 @@ def _parse_data(
     escapechar: str,
     strict: bool,
     return_quoted: bool = False,
+    field_limit: Optional[int] = None,
 ) -> Iterator[Union[List[str], List[Tuple[str, bool]]]]:
+    if field_limit is None:
+        field_limit = field_size_limit()
     parser = Parser(
         data,
         delimiter=delimiter,
         quotechar=quotechar,
         escapechar=escapechar,
-        field_limit=field_size_limit(),
+        field_limit=field_limit,
         strict=strict,
         return_quoted=return_quoted,
     )
@@ -78,6 +81,7 @@ def parse_data(
     escapechar: Optional[str] = None,
     strict: Optional[bool] = None,
     return_quoted: bool = False,
+    field_limit: Optional[int] = None,
 ) -> Iterator[Union[List[str], List[Tuple[str, bool]]]]:
     """Parse the data given a dialect using the C parser
 
@@ -110,6 +114,12 @@ def parse_data(
         For each cell, return a tuple "(field, is_quoted)" where the second
         element indicates whether the cell was a quoted cell or not.
 
+    field_limit : Optional[int]
+        The limit on the field size to use for this parsing operation. If
+        None, the global limit set by :func:`field_size_limit` is used. This
+        parameter is used internally by dialect detection so that it can use a
+        larger limit without affecting other readers.
+
     Yields
     ------
     rows : list
@@ -136,6 +146,7 @@ def parse_data(
         escapechar_,
         strict_,
         return_quoted=return_quoted,
+        field_limit=field_limit,
     )
 
 
@@ -143,10 +154,12 @@ def parse_string(
     data: str,
     dialect: SimpleDialect,
     return_quoted: bool = False,
+    field_limit: Optional[int] = None,
 ) -> Iterator[Union[List[str], List[Tuple[str, bool]]]]:
     """Utility for when the CSV file is encoded as a single string"""
     return parse_data(
         iter(io.StringIO(data, newline="")),
         dialect=dialect,
         return_quoted=return_quoted,
+        field_limit=field_limit,
     )

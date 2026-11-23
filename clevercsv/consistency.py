@@ -15,7 +15,6 @@ from typing import Iterable
 from typing import List
 from typing import Optional
 
-from . import field_size_limit
 from .break_ties import tie_breaker
 from .cparser_util import parse_string
 from .detect_pattern import pattern_score
@@ -113,24 +112,29 @@ class ConsistencyDetector:
         # TODO: probably some optimization there too
         dialects = get_dialects(data, delimiters=delimiters)
 
-        # TODO: This is not thread-safe and this object can simply own a Parser
-        # for each dialect and set the limit directly there (we can also cache
-        # the best parsing result)
-        old_limit = field_size_limit(len(data) + 1)
+        # Allow fields that span (nearly) the entire sample while detecting.
+        # This limit is local to this detection: it is passed explicitly to
+        # every parser started during detection, so it can't leak to other
+        # readers or detections running concurrently in the same process.
+        field_limit = len(data) + 1
 
-        scores = self.compute_consistency_scores(data, dialects)
+        scores = self.compute_consistency_scores(
+            data, dialects, field_limit=field_limit
+        )
         best_dialects = ConsistencyDetector.get_best_dialects(scores)
         result: Optional[SimpleDialect] = None
         if len(best_dialects) == 1:
             result = best_dialects[0]
         else:
-            result = tie_breaker(data, best_dialects)
+            result = tie_breaker(data, best_dialects, field_limit=field_limit)
 
-        field_size_limit(old_limit)
         return result
 
     def compute_consistency_scores(
-        self, data: str, dialects: List[SimpleDialect]
+        self,
+        data: str,
+        dialects: List[SimpleDialect],
+        field_limit: Optional[int] = None,
     ) -> Dict[SimpleDialect, ConsistencyScore]:
         """Compute the consistency score for each dialect
 
@@ -148,6 +152,11 @@ class ConsistencyDetector:
 
         dialects : Iterable[SimpleDialect]
             An iterable of delimiters to consider.
+
+        field_limit : Optional[int]
+            The field size limit to use when parsing the data for the type
+            score. If None, the global limit set by
+            :func:`field_size_limit` is used.
 
         Returns
         -------
@@ -167,7 +176,7 @@ class ConsistencyDetector:
                     print("%15r:\tP = %15.6f\tskip." % (dialect, P))
                 continue
 
-            T = self.compute_type_score(data, dialect)
+            T = self.compute_type_score(data, dialect, field_limit=field_limit)
             Q = P * T
             incumbent_score = max(incumbent_score, Q)
             scores[dialect] = ConsistencyScore(P, T, Q)
@@ -192,11 +201,18 @@ class ConsistencyDetector:
         return [d for d, score in scores.items() if score.Q == Qmax]
 
     def compute_type_score(
-        self, data: str, dialect: SimpleDialect, eps: float = DEFAULT_EPS_TYPE
+        self,
+        data: str,
+        dialect: SimpleDialect,
+        eps: float = DEFAULT_EPS_TYPE,
+        field_limit: Optional[int] = None,
     ) -> float:
         """Compute the type score"""
         total = known = 0
-        for row in parse_string(data, dialect, return_quoted=True):
+        rows = parse_string(
+            data, dialect, return_quoted=True, field_limit=field_limit
+        )
+        for row in rows:
             assert all(isinstance(cell, tuple) for cell in row)
             for cell, is_quoted in row:
                 total += 1
